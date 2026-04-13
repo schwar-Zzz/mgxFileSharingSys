@@ -1,0 +1,15 @@
+node_modules/
+.pnpm-store/
+dist/
+build/
+.env
+.env.local
+.env.*.local
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+.cache/
+.eslint-cache
+coverage/
