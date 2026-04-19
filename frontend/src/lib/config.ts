@@ -15,8 +15,15 @@ const defaultConfig = {
 export async function loadRuntimeConfig(): Promise<void> {
   try {
     console.log('🔧 DEBUG: Starting to load runtime config...');
+    const runtimeConfigUrl = import.meta.env.VITE_RUNTIME_CONFIG_URL;
+
+    if (!runtimeConfigUrl) {
+      console.log('No runtime config URL configured, skipping fetch');
+      return;
+    }
+
     // Try to load configuration from a config endpoint
-    const response = await fetch('/api/config');
+    const response = await fetch(runtimeConfigUrl);
     if (response.ok) {
       const contentType = response.headers.get('content-type');
       // Only parse as JSON if the response is actually JSON

@@ -8,11 +8,28 @@ export default function AuthCallback() {
   useEffect(() => {
     const handleCallback = async () => {
       try {
-        const { error } = await supabase.auth.getSession();
+        const url = new URL(window.location.href);
+        const code = url.searchParams.get('code');
+
+        if (code) {
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) {
+            navigate('/auth/error?msg=' + encodeURIComponent(error.message));
+            return;
+          }
+        }
+
+        const { data, error } = await supabase.auth.getSession();
         if (error) {
           navigate('/auth/error?msg=' + encodeURIComponent(error.message));
           return;
         }
+
+        if (!data.session) {
+          navigate('/auth/error?msg=Authentication+failed');
+          return;
+        }
+
         navigate('/dashboard');
       } catch {
         navigate('/auth/error?msg=Authentication+failed');

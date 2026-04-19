@@ -4,6 +4,8 @@ export interface Profile {
   role: 'user' | 'admin' | 'super_admin';
   status: 'active' | 'suspended' | 'pending';
   avatar_url: string | null;
+  storage_quota_gb: number;
+  storage_used_gb: number;
   created_at: string;
   updated_at: string;
 }

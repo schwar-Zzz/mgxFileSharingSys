@@ -17,6 +17,7 @@ export const TABLES = {
   files: `app_${SESSION_ID}_files`,
   sharing: `app_${SESSION_ID}_sharing`,
   audit_logs: `app_${SESSION_ID}_audit_logs`,
+  storage_settings: `app_${SESSION_ID}_storage_settings`,
 } as const;
 
 export const STORAGE_BUCKET = 'private_files';

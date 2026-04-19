@@ -9,6 +9,8 @@ import Auth from './pages/Auth';
 import Dashboard from './pages/Dashboard';
 import AuthCallback from './pages/AuthCallback';
 import AuthError from './pages/AuthError';
+import Profile from './pages/Profile';
+import NotFound from './pages/NotFound';
 
 const queryClient = new QueryClient();
 
@@ -78,9 +80,11 @@ const App = () => (
         <Routes>
           <Route path="/" element={<PublicRoute><Auth /></PublicRoute>} />
           <Route path="/dashboard" element={<AuthGuard><Dashboard /></AuthGuard>} />
+          <Route path="/profile" element={<AuthGuard><Profile /></AuthGuard>} />
+          <Route path="/signup" element={<NotFound />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/auth/error" element={<AuthError />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
     </TooltipProvider>

@@ -2,10 +2,25 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, TABLES } from '@/lib/supabase';
 import type { Profile } from '@/lib/types';
-import FileManager from '@/components/FileManager';
+import FileManager from '../components/FileManager';
+import AdminPanel from '../components/AdminPanel';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Progress } from '@/components/ui/progress';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarSeparator,
+  SidebarTrigger,
+} from '@/components/ui/sidebar';
 import { toast } from 'sonner';
 import {
   FolderOpen, Users, Shield, LogOut, ChevronDown,
@@ -18,6 +33,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [userId, setUserId] = useState<string>('');
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [avatarSrc, setAvatarSrc] = useState('');
   const [activeTab, setActiveTab] = useState<SidebarTab>('my-files');
   const [loading, setLoading] = useState(true);
 
@@ -37,7 +53,46 @@ export default function Dashboard() {
         .single();
 
       if (profileData) {
-        setProfile(profileData);
+        const { data: activeFolders } = await supabase
+          .from(TABLES.folders)
+          .select('id')
+          .eq('owner_id', user.id)
+          .eq('is_deleted', false);
+
+        const activeFolderIds = new Set((activeFolders || []).map(folder => folder.id));
+
+        const { data: userFiles } = await supabase
+          .from(TABLES.files)
+          .select('size_bytes,folder_id')
+          .eq('owner_id', user.id)
+          .eq('is_deleted', false);
+
+        const visibleFiles = (userFiles || []).filter(file => !file.folder_id || activeFolderIds.has(file.folder_id));
+        const usedBytes = visibleFiles.reduce((sum, file) => sum + Number(file.size_bytes || 0), 0);
+        const usedGb = usedBytes / (1024 * 1024 * 1024);
+
+        await supabase
+          .from(TABLES.profiles)
+          .update({ storage_used_gb: usedGb })
+          .eq('id', user.id);
+
+        setProfile({
+          ...profileData,
+          storage_used_gb: usedGb,
+        });
+
+        if (profileData.avatar_url) {
+          if (profileData.avatar_url.startsWith('http')) {
+            setAvatarSrc(profileData.avatar_url);
+          } else {
+            const { data } = await supabase.storage
+              .from('private_files')
+              .createSignedUrl(profileData.avatar_url, 60 * 60);
+            setAvatarSrc(data?.signedUrl || '');
+          }
+        } else {
+          setAvatarSrc('');
+        }
       }
       setLoading(false);
     };
@@ -62,101 +117,136 @@ export default function Dashboard() {
     ? profile.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
     : '??';
 
+  const usedStorageGb = Number(profile?.storage_used_gb || 0);
+  const totalStorageGb = Number(profile?.storage_quota_gb || 0);
+  const remainingStorageGb = Math.max(totalStorageGb - usedStorageGb, 0);
+  const storageUsagePercent = totalStorageGb > 0 ? Math.min((usedStorageGb / totalStorageGb) * 100, 100) : 0;
+  const storageUsageLabel = `${storageUsagePercent < 0.01 ? '0' : storageUsagePercent.toFixed(0)}% used`;
+  const formatStorageGb = (value: number) => (value > 0 && value < 1 ? value.toFixed(4) : value.toFixed(2));
+
+  const handleStorageUsageChange = (nextUsedGb: number) => {
+    setProfile(prev => prev ? { ...prev, storage_used_gb: nextUsedGb } : prev);
+  };
+
   const sidebarItems: { id: SidebarTab; label: string; icon: React.ElementType; adminOnly?: boolean }[] = [
     { id: 'my-files', label: 'My Files', icon: FolderOpen },
     { id: 'shared', label: 'Shared with Me', icon: Share2 },
     { id: 'admin', label: 'Admin Panel', icon: Shield, adminOnly: true },
   ];
+  const activeTabLabel = sidebarItems.find(item => item.id === activeTab)?.label || 'Menu';
 
   return (
-    <div className="min-h-screen flex bg-gray-50">
-      {/* Sidebar */}
-      <aside className="w-64 bg-white border-r flex flex-col shrink-0">
-        {/* Logo */}
-        <div className="p-4 border-b flex items-center gap-3">
-          <img
-            src="https://mgx-backend-cdn.metadl.com/generate/images/868948/2026-04-12/8d11fb1c-6440-4013-98cd-2a764426327c.png"
-            alt="Logo"
-            className="w-8 h-8 rounded-lg"
-          />
-          <span className="font-bold text-lg text-gray-900">FileVault</span>
-        </div>
+    <SidebarProvider defaultOpen>
+      <div className="min-h-screen flex w-full bg-gray-50">
+        <Sidebar collapsible="icon" className="border-r border-gray-200 bg-white">
+          <SidebarHeader className="gap-3 border-b border-gray-200 px-4 py-4">
+            <div className="flex items-center gap-3">
+              <img
+                src="/EGCTU.png"
+                alt="Logo"
+                className="h-12 group-data-[collapsible=icon]:hidden"
+              />
+              <span className="font-bold text-lg text-gray-900 group-data-[collapsible=icon]:hidden">FileVault</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-gray-400 group-data-[collapsible=icon]:hidden">Navigation</span>
+              <SidebarTrigger className="text-gray-500 hover:bg-blue-50 hover:text-blue-700" />
+            </div>
+          </SidebarHeader>
 
-        {/* Navigation */}
-        <nav className="flex-1 p-3 space-y-1">
-          {sidebarItems.map(item => {
-            if (item.adminOnly && profile?.role !== 'super_admin') return null;
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  activeTab === item.id
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                <Icon className="w-5 h-5" />
-                {item.label}
-              </button>
-            );
-          })}
-        </nav>
+          <SidebarContent className="px-2 py-3">
+            <SidebarMenu className="gap-1">
+              {sidebarItems.map(item => {
+                if (item.adminOnly && profile?.role === 'user') return null;
+                const Icon = item.icon;
+                return (
+                  <SidebarMenuItem key={item.id}>
+                    <SidebarMenuButton
+                      isActive={activeTab === item.id}
+                      onClick={() => setActiveTab(item.id)}
+                      className={activeTab === item.id
+                        ? 'bg-blue-50 text-blue-700 hover:bg-blue-100 hover:text-blue-700 group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:justify-center'
+                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:justify-center'
+                      }
+                    >
+                      <Icon className="h-5 w-5" />
+                      <span className="group-data-[collapsible=icon]:hidden">{item.label}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarContent>
 
-        {/* Storage info */}
-        <div className="p-4 border-t">
-          <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
-            <HardDrive className="w-4 h-4" />
-            <span>Storage</span>
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div className="bg-blue-600 h-2 rounded-full" style={{ width: '15%' }} />
-          </div>
-          <p className="text-xs text-gray-400 mt-1">Using available storage</p>
-        </div>
+          <SidebarSeparator />
 
-        {/* User menu */}
-        <div className="p-3 border-t">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="w-full justify-start gap-3 h-auto py-2">
-                <Avatar className="h-8 w-8">
-                  <AvatarFallback className="bg-blue-100 text-blue-700 text-xs">{initials}</AvatarFallback>
-                </Avatar>
-                <div className="flex-1 text-left min-w-0">
-                  <p className="text-sm font-medium truncate">{profile?.full_name || 'User'}</p>
-                  <p className="text-xs text-gray-400 capitalize">{profile?.role || 'user'}</p>
+          <SidebarFooter className="gap-4 px-4 py-4 group-data-[collapsible=icon]:px-2">
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-2 text-sm text-gray-500">
+                <div className="flex items-center gap-2">
+                  <HardDrive className="w-4 h-4" />
+                  <span className="group-data-[collapsible=icon]:hidden">Storage</span>
                 </div>
-                <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem disabled>
-                <Users className="w-4 h-4 mr-2" /> Profile
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleLogout} className="text-red-600">
-                <LogOut className="w-4 h-4 mr-2" /> Sign Out
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </aside>
+                <span className="text-xs font-medium text-gray-500 group-data-[collapsible=icon]:hidden">{storageUsageLabel}</span>
+              </div>
+              <Progress value={storageUsagePercent} className="h-2 bg-blue-50" indicatorClassName="bg-blue-700" />
+              <p className="mt-1 text-xs text-gray-400 group-data-[collapsible=icon]:hidden">
+                {formatStorageGb(usedStorageGb)} GB used of {formatStorageGb(totalStorageGb)} GB
+              </p>
+              <p className="text-xs text-gray-400 group-data-[collapsible=icon]:hidden">{formatStorageGb(remainingStorageGb)} GB remaining</p>
+            </div>
 
-      {/* Main content */}
-      <main className="flex-1 flex flex-col min-w-0">
-        {activeTab === 'my-files' && (
-          <FileManager userId={userId} userRole={profile?.role || 'user'} />
-        )}
-        {activeTab === 'shared' && (
-          <SharedWithMeContent userId={userId} />
-        )}
-        {activeTab === 'admin' && profile?.role === 'super_admin' && (
-          <AdminContent />
-        )}
-      </main>
-    </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="w-full justify-start gap-3 h-auto py-2 group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:py-0">
+                  <Avatar className="h-8 w-8 group-data-[collapsible=icon]:hidden">
+                    <AvatarImage src={avatarSrc || undefined} alt={profile?.full_name || 'Avatar'} />
+                    <AvatarFallback className="bg-blue-100 text-blue-700 text-xs">
+                      {initials}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0 text-left group-data-[collapsible=icon]:hidden">
+                    <p className="truncate text-sm font-medium">{profile?.full_name || 'User'}</p>
+                    <p className="text-xs capitalize text-gray-400">{profile?.role || 'user'}</p>
+                  </div>
+                  <ChevronDown className="h-4 w-4 shrink-0 text-gray-400" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onSelect={() => navigate('/profile')}>
+                  <Users className="mr-2 h-4 w-4" /> Profile
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout} className="text-red-600">
+                  <LogOut className="mr-2 h-4 w-4" /> Sign Out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </SidebarFooter>
+        </Sidebar>
+
+        <SidebarInset className="flex flex-col min-w-0">
+          <div className="sticky top-0 z-30 flex items-center gap-3 border-b border-gray-200 bg-white/95 px-4 py-2 backdrop-blur md:hidden">
+            <SidebarTrigger className="text-gray-600 hover:bg-blue-50 hover:text-blue-700" />
+            <span className="text-sm font-semibold text-gray-900">{activeTabLabel}</span>
+          </div>
+          {activeTab === 'my-files' && (
+            <FileManager
+              userId={userId}
+              userRole={profile?.role || 'user'}
+              profile={profile}
+              onStorageUsageChange={handleStorageUsageChange}
+            />
+          )}
+          {activeTab === 'shared' && (
+            <SharedWithMeContent userId={userId} />
+          )}
+          {activeTab === 'admin' && profile?.role !== 'user' && (
+            <AdminPanel viewerRole={profile?.role || 'user'} />
+          )}
+        </SidebarInset>
+      </div>
+    </SidebarProvider>
   );
 }
 
@@ -255,187 +345,6 @@ function SharedWithMeContent({ userId }: { userId: string }) {
                   </td>
                 </tr>
               ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Admin content (inline)
-function AdminContent() {
-  const [users, setUsers] = useState<Profile[]>([]);
-  const [logs, setLogs] = useState<Array<{ id: string; user_id: string; action: string; resource_type: string | null; details: Record<string, unknown>; created_at: string; user_name?: string }>>([]);
-  const [activeAdminTab, setActiveAdminTab] = useState<'users' | 'logs'>('users');
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      const { data: profilesData } = await supabase.from(TABLES.profiles).select('*').order('created_at', { ascending: false });
-      setUsers(profilesData || []);
-
-      const { data: logsData } = await supabase.from(TABLES.audit_logs).select('*').order('created_at', { ascending: false }).limit(100);
-      if (logsData) {
-        const enriched = await Promise.all(logsData.map(async (log) => {
-          const { data: profile } = await supabase.from(TABLES.profiles).select('full_name').eq('id', log.user_id).single();
-          return { ...log, user_name: profile?.full_name || 'Unknown' };
-        }));
-        setLogs(enriched);
-      }
-      setLoading(false);
-    };
-    fetchData();
-  }, []);
-
-  const handleRoleChange = async (userId: string, newRole: string) => {
-    const { error } = await supabase.from(TABLES.profiles).update({ role: newRole }).eq('id', userId);
-    if (error) {
-      toast.error('Failed to update role');
-    } else {
-      toast.success('Role updated');
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole as Profile['role'] } : u));
-    }
-  };
-
-  const handleStatusChange = async (userId: string, newStatus: string) => {
-    const { error } = await supabase.from(TABLES.profiles).update({ status: newStatus }).eq('id', userId);
-    if (error) {
-      toast.error('Failed to update status');
-    } else {
-      toast.success('Status updated');
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, status: newStatus as Profile['status'] } : u));
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold text-gray-900 mb-6">Admin Panel</h2>
-
-      <div className="flex gap-2 mb-6">
-        <Button
-          variant={activeAdminTab === 'users' ? 'default' : 'outline'}
-          onClick={() => setActiveAdminTab('users')}
-        >
-          <Users className="w-4 h-4 mr-2" /> Users
-        </Button>
-        <Button
-          variant={activeAdminTab === 'logs' ? 'default' : 'outline'}
-          onClick={() => setActiveAdminTab('logs')}
-        >
-          <Shield className="w-4 h-4 mr-2" /> Audit Logs
-        </Button>
-      </div>
-
-      {activeAdminTab === 'users' ? (
-        <div className="bg-white border rounded-lg overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">
-              <tr>
-                <th className="px-4 py-3">User</th>
-                <th className="px-4 py-3">Role</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Joined</th>
-                <th className="px-4 py-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {users.map(user => (
-                <tr key={user.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-8 w-8">
-                        <AvatarFallback className="bg-blue-100 text-blue-700 text-xs">
-                          {user.full_name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '??'}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span className="font-medium">{user.full_name || 'Unknown'}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <select
-                      value={user.role}
-                      onChange={(e) => handleRoleChange(user.id, e.target.value)}
-                      className="text-sm border rounded px-2 py-1"
-                    >
-                      <option value="user">User</option>
-                      <option value="admin">Admin</option>
-                      <option value="super_admin">Super Admin</option>
-                    </select>
-                  </td>
-                  <td className="px-4 py-3">
-                    <select
-                      value={user.status}
-                      onChange={(e) => handleStatusChange(user.id, e.target.value)}
-                      className="text-sm border rounded px-2 py-1"
-                    >
-                      <option value="active">Active</option>
-                      <option value="suspended">Suspended</option>
-                      <option value="pending">Pending</option>
-                    </select>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">
-                    {new Date(user.created_at).toLocaleDateString()}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`text-xs px-2 py-1 rounded-full ${
-                      user.status === 'active' ? 'bg-green-100 text-green-700' :
-                      user.status === 'suspended' ? 'bg-red-100 text-red-700' :
-                      'bg-yellow-100 text-yellow-700'
-                    }`}>
-                      {user.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="bg-white border rounded-lg overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">
-              <tr>
-                <th className="px-4 py-3">User</th>
-                <th className="px-4 py-3">Action</th>
-                <th className="px-4 py-3">Resource</th>
-                <th className="px-4 py-3">Details</th>
-                <th className="px-4 py-3">Time</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {logs.map(log => (
-                <tr key={log.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm">{log.user_name}</td>
-                  <td className="px-4 py-3">
-                    <span className="text-xs px-2 py-1 bg-gray-100 rounded-full font-medium">
-                      {log.action}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-500 capitalize">{log.resource_type || '—'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">
-                    {JSON.stringify(log.details)}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">
-                    {new Date(log.created_at).toLocaleString()}
-                  </td>
-                </tr>
-              ))}
-              {logs.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
-                    No audit logs yet
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>

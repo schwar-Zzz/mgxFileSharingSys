@@ -1,0 +1,4 @@
+project_id = "backend"
+
+[functions.manage-user]
+verify_jwt = false
