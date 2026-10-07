@@ -1,0 +1,6 @@
+FROM node:22-alpine
+
+RUN apk add --no-cache docker-cli docker-cli-compose
+RUN npm install --global supabase
+
+ENTRYPOINT ["supabase"]

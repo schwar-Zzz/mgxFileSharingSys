@@ -230,6 +230,9 @@ export default function Dashboard() {
             <SidebarTrigger className="text-gray-600 hover:bg-blue-50 hover:text-blue-700" />
             <span className="text-sm font-semibold text-gray-900">{activeTabLabel}</span>
           </div>
+          {activeTab === 'admin' && profile?.role !== 'user' && (
+            <AdminPanel viewerRole={profile?.role || 'user'} />
+          )}          
           {activeTab === 'my-files' && (
             <FileManager
               userId={userId}
@@ -241,9 +244,7 @@ export default function Dashboard() {
           {activeTab === 'shared' && (
             <SharedWithMeContent userId={userId} />
           )}
-          {activeTab === 'admin' && profile?.role !== 'user' && (
-            <AdminPanel viewerRole={profile?.role || 'user'} />
-          )}
+
         </SidebarInset>
       </div>
     </SidebarProvider>
